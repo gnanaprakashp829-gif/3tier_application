@@ -2,21 +2,26 @@ name: 3-Tier App CI/CD Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
+
+  # ============================================================
+  # BUILD AND PUSH DOCKER IMAGES
+  # ============================================================
   build-and-push:
     name: Build and Push Docker Images
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Login to DockerHub
         uses: docker/login-action@v3
         with:
-          username: ravinadh
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Set up Docker Buildx
@@ -42,15 +47,20 @@ jobs:
 
       - name: Summary
         run: |
-          echo "✅ Frontend pushed → ravinadh/3tier-frontend:latest"
-          echo "✅ Backend  pushed → ravinadh/3tier-backend:latest"
+          echo "Frontend pushed successfully"
+          echo "Backend pushed successfully"
 
+
+  # ============================================================
+  # DEPLOY TO EC2
+  # ============================================================
   deploy:
     name: Deploy to EC2
     runs-on: ubuntu-latest
     needs: build-and-push
 
     steps:
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -71,20 +81,51 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -e
+
             cd /home/ubuntu/3tier_application
-            echo "Logging into DockerHub..."
-            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u ravinadh --password-stdin
-            echo "Pulling latest images..."
+
+            echo "================================="
+            echo "Logging into DockerHub"
+            echo "================================="
+
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login \
+              -u "${{ secrets.DOCKERHUB_USERNAME }}" \
+              --password-stdin
+
+            echo "================================="
+            echo "Pulling latest images"
+            echo "================================="
+
             sudo docker pull ravinadh/3tier-frontend:latest
             sudo docker pull ravinadh/3tier-backend:latest
-            echo "Stopping old containers..."
-            sudo docker-compose down --remove-orphans || true
-            echo "Starting all containers..."
-            sudo docker-compose up -d
-            echo "Waiting 20s for DB to be ready..."
+
+            echo "================================="
+            echo "Stopping old containers"
+            echo "================================="
+
+            sudo docker compose down --remove-orphans || true
+
+            echo "================================="
+            echo "Starting new containers"
+            echo "================================="
+
+            sudo docker compose up -d
+
+            echo "================================="
+            echo "Waiting for database"
+            echo "================================="
+
             sleep 20
-            echo "Container status:"
-            sudo docker-compose ps
-            echo "Deployment complete!"
+
+            echo "================================="
+            echo "Container Status"
+            echo "================================="
+
+            sudo docker compose ps
+
+            echo "================================="
+            echo "Deployment Complete"
+            echo "================================="
+
             echo "Frontend : http://${{ secrets.EC2_HOST }}"
             echo "Backend  : http://${{ secrets.EC2_HOST }}:5000/health"
